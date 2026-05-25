@@ -1,0 +1,35 @@
+const BASE  = 'https://gate.whapi.cloud'
+const TOKEN = () => process.env.WHAPI_TOKEN!
+
+function headers() {
+  return {
+    'Content-Type':  'application/json',
+    'Authorization': `Bearer ${TOKEN()}`
+  }
+}
+
+export async function sendText(to: string, body: string) {
+  const res = await fetch(`${BASE}/messages/text`, {
+    method:  'POST',
+    headers: headers(),
+    body:    JSON.stringify({ to, body })
+  })
+  return res.json()
+}
+
+export async function sendImage(to: string, mediaUrl: string, caption = '') {
+  const res = await fetch(`${BASE}/messages/image`, {
+    method:  'POST',
+    headers: headers(),
+    body:    JSON.stringify({ to, media: mediaUrl, caption })
+  })
+  return res.json()
+}
+
+export async function downloadMediaAsBase64(mediaUrl: string): Promise<string> {
+  const res = await fetch(mediaUrl, {
+    headers: { 'Authorization': `Bearer ${TOKEN()}` }
+  })
+  const buffer = await res.arrayBuffer()
+  return Buffer.from(buffer).toString('base64')
+}

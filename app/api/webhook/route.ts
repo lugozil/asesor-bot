@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { initDB, saveMessage, saveKnowledge } from '@/lib/db'
-import { sendText, sendImage, getMediaBase64 } from '@/lib/evolution'
+import { sendText, sendImage, downloadMediaAsBase64 } from '@/lib/whapi'
 import { transcribeAudio } from '@/lib/groq'
 import { chat } from '@/lib/claude'
 
-// Único número autorizado: 04249292269 Venezuela (+58)
+// Único número autorizado — 04249292269 Venezuela (+58)
 const ALLOWED = '584249292269'
 
 let ready = false
@@ -17,27 +17,25 @@ export async function GET() {
   return NextResponse.json({ status: 'asesor-bot online' })
 }
 
-// ── POST — webhook de Evolution API ──────────────────────────────────────────
+// ── POST — webhook de Whapi.cloud ─────────────────────────────────────────────
 export async function POST(req: NextRequest) {
   try {
     await ensureDB()
     const body = await req.json()
 
-    // Solo procesar mensajes entrantes
-    if (body.event !== 'messages.upsert') {
+    // Whapi envía { messages: [...] }
+    const messages = body?.messages
+    if (!Array.isArray(messages) || messages.length === 0) {
       return NextResponse.json({ ok: true })
     }
 
-    const data        = body.data
-    const key         = data?.key
-    const messageType = data?.messageType as string | undefined
+    const msg = messages[0]
 
     // Ignorar mensajes enviados por el propio bot
-    if (key?.fromMe) return NextResponse.json({ ok: true })
+    if (msg?.from_me) return NextResponse.json({ ok: true })
 
-    // Normalizar número remitente
-    const jid    = (key?.remoteJid as string) ?? ''
-    const sender = jid.replace(/@s\.whatsapp\.net|@c\.us/g, '')
+    // Normalizar número remitente (Whapi envía sin @s.whatsapp.net)
+    const sender: string = (msg?.from ?? '').replace(/[^0-9]/g, '')
 
     // ── FILTRO DE SEGURIDAD ───────────────────────────────────────────────────
     if (sender !== ALLOWED) {
@@ -47,17 +45,18 @@ export async function POST(req: NextRequest) {
 
     let userMessage = ''
 
-    // ── Texto plano ───────────────────────────────────────────────────────────
-    if (messageType === 'conversation') {
-      userMessage = data.message?.conversation ?? ''
-    } else if (messageType === 'extendedTextMessage') {
-      userMessage = data.message?.extendedTextMessage?.text ?? ''
+    // ── Texto ─────────────────────────────────────────────────────────────────
+    if (msg.type === 'text') {
+      userMessage = msg?.text?.body ?? ''
     }
     // ── Nota de voz ───────────────────────────────────────────────────────────
-    else if (messageType === 'audioMessage') {
+    else if (msg.type === 'audio' || msg.type === 'voice') {
+      const mediaUrl = msg?.audio?.link ?? msg?.voice?.link ?? ''
+      if (!mediaUrl) return NextResponse.json({ ok: true })
+
       await sendText(sender, '🎙️ _Transcribiendo nota de voz..._')
-      const base64 = await getMediaBase64(key)
-      userMessage  = await transcribeAudio(base64)
+      const base64   = await downloadMediaAsBase64(mediaUrl)
+      userMessage    = await transcribeAudio(base64)
       await sendText(sender, `_🗒 Transcripción: "${userMessage}"_`)
     } else {
       return NextResponse.json({ ok: true })
