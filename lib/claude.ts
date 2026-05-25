@@ -59,7 +59,7 @@ function buildSystemPrompt(knowledgeContext: string): string {
     timeZone: 'America/Caracas'
   })
 
-  return `Eres el asesor financiero personal, contador y consultor empresarial de Miguel (usuario venezolano, empresa Lumotica Innovations). Respondes por WhatsApp — usa formato WhatsApp: *negrita*, _cursiva_, listas con guion. Sé conciso, directo y útil.
+  return `Eres el asesor financiero personal, contador y consultor empresarial de Miguel (usuario venezolano, empresa Lumotica Innovations). Respondes por WhatsApp.
 
 Hoy es: ${today}
 
@@ -68,18 +68,20 @@ ${FINANCIAL_CONTEXT}
 ## BASE DE CONOCIMIENTO DINÁMICA
 ${knowledgeContext || 'Sin entradas aún.'}
 
-## REGLAS
+## REGLAS DE FORMATO (MUY IMPORTANTE)
 - Responde siempre en español
-- Usa los datos financieros de arriba como fuente de verdad
-- Sé proactivo: si ves un riesgo o una oportunidad, dilo sin que te lo pidan
-- Si el usuario comparte información nueva o relevante (ingreso, gasto, avance, idea, cliente, deuda), al FINAL de tu respuesta agrega en una línea separada:
-  GUARDAR_AUTO:[categoría]|[resumen en 1-2 líneas]
-  Ejemplo: GUARDAR_AUTO:TodoPymes|Se firmó cliente "Ferretería López" en plan básico el 25-may-2026
-- Si el usuario pide un gráfico, al FINAL de tu respuesta agrega en una línea separada:
-  CHART_JSON:{"type":"bar","data":{"labels":[...],"datasets":[{"label":"...","data":[...],"backgroundColor":"..."}]},"options":{"plugins":{"title":{"display":true,"text":"..."}}}}
-  Usa colores amigables: #4F81BD, #C0504D, #9BBB59, #8064A2
-- Si el usuario escribe "guardar: [algo]", confirma con: ✅ *Guardado.*
-- Cuando el usuario pida su resumen financiero, usa siempre los datos de arriba actualizados`
+- *MÁXIMO 5-8 líneas por respuesta*. Si hay más info, resume y ofrece ampliar
+- Usa formato WhatsApp: *negrita*, _cursiva_, listas con guion (-)
+- Sin párrafos largos. Directo al punto
+- Sé proactivo: si ves un riesgo u oportunidad, dilo en 1 línea
+
+## REGLAS DE CONTENIDO
+- Si el usuario comparte información nueva (ingreso, gasto, avance, idea, cliente, deuda), al FINAL agrega exactamente esta línea:
+  GUARDAR_AUTO:[categoría]|[resumen máximo 15 palabras]
+- Si piden un gráfico, al FINAL agrega exactamente esta línea (debe ser JSON válido en una sola línea):
+  CHART_JSON:{"type":"bar","data":{"labels":["A","B"],"datasets":[{"label":"Título","data":[1,2],"backgroundColor":["#4F81BD","#C0504D"]}]},"options":{"plugins":{"title":{"display":true,"text":"Título del gráfico"}}}}
+- CHART_JSON debe ir en la ÚLTIMA línea, sin nada después
+- Si escriben "guardar: [algo]", confirma con: ✅ *Guardado.*`
 }
 
 // ── Exportaciones ──────────────────────────────────────────────────────────────
@@ -122,20 +124,29 @@ export async function chat(userMessage: string): Promise<ChatResult> {
     ? { category: autoSaveMatch[1].trim(), content: autoSaveMatch[2].trim() }
     : undefined
 
-  // Extraer CHART_JSON
-  const chartMatch = full.match(/CHART_JSON:(\{[\s\S]*?\})(?=\n|$)/m)
+  // Extraer CHART_JSON — buscar la línea que empieza con el marcador
   let chartUrl: string | undefined
-  if (chartMatch) {
+  const chartLine = full.split('\n').findLast(l => l.trimStart().startsWith('CHART_JSON:'))
+  if (chartLine) {
+    const jsonStr = chartLine.slice(chartLine.indexOf('CHART_JSON:') + 'CHART_JSON:'.length).trim()
     try {
-      const encoded = encodeURIComponent(chartMatch[1].trim())
-      chartUrl = `https://quickchart.io/chart?c=${encoded}&w=800&h=400&bkg=white`
+      const config = JSON.parse(jsonStr)
+      // Usar API POST de QuickChart → devuelve URL corta permanente
+      const qcRes = await fetch('https://quickchart.io/chart/create', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ chart: config, width: 800, height: 400, backgroundColor: 'white' })
+      })
+      const qcData = await qcRes.json()
+      if (qcData?.url) chartUrl = qcData.url
     } catch { /* ignorar chart malformado */ }
   }
 
   // Limpiar marcadores de la respuesta visible
   const response = full
-    .replace(/GUARDAR_AUTO:[^\n]+/gi, '')
-    .replace(/CHART_JSON:\{[\s\S]*?\}(?=\n|$)/m, '')
+    .split('\n')
+    .filter(l => !l.trimStart().startsWith('GUARDAR_AUTO:') && !l.trimStart().startsWith('CHART_JSON:'))
+    .join('\n')
     .trim()
 
   return { response, autoSave, chartUrl }
