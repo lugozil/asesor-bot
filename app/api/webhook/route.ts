@@ -55,16 +55,17 @@ export async function POST(req: NextRequest) {
     // ── Nota de voz (ptt = push-to-talk, audio, voice) ────────────────────────
     else if (msg.type === 'audio' || msg.type === 'voice' || msg.type === 'ptt') {
       const mediaObj = msg?.audio ?? msg?.voice ?? msg?.ptt ?? {}
-      const mediaUrl: string = mediaObj?.link ?? mediaObj?.url ?? mediaObj?.id ?? ''
+      // Whapi puede dar link directo o solo el id para buscar via /media/{id}
+      const mediaRef: string = mediaObj?.link ?? mediaObj?.url ?? mediaObj?.id ?? ''
 
-      if (!mediaUrl) {
-        await sendText(sender, `⚠️ _Debug: tipo="${msg.type}" sin URL. Payload: ${JSON.stringify(mediaObj)}_`)
+      if (!mediaRef) {
+        await sendText(sender, `⚠️ _Debug: tipo="${msg.type}" sin referencia de media. Keys: ${Object.keys(mediaObj).join(',')}_`)
         return NextResponse.json({ ok: true })
       }
 
       try {
         await sendText(sender, '🎙️ _Transcribiendo nota de voz..._')
-        const base64 = await downloadMediaAsBase64(mediaUrl)
+        const base64 = await downloadMediaAsBase64(mediaRef)
         userMessage  = await transcribeAudio(base64)
         await sendText(sender, `_🗒 Transcripción: "${userMessage}"_`)
       } catch (err) {

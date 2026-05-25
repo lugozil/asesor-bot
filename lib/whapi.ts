@@ -26,10 +26,18 @@ export async function sendImage(to: string, mediaUrl: string, caption = '') {
   return res.json()
 }
 
-export async function downloadMediaAsBase64(mediaUrl: string): Promise<string> {
-  const res = await fetch(mediaUrl, {
+export async function downloadMediaAsBase64(mediaIdOrUrl: string): Promise<string> {
+  // Si es una URL completa la descargamos directo, si es un ID usamos el endpoint de Whapi
+  const url = mediaIdOrUrl.startsWith('http')
+    ? mediaIdOrUrl
+    : `${BASE}/media/${mediaIdOrUrl}`
+
+  const res = await fetch(url, {
     headers: { 'Authorization': `Bearer ${TOKEN()}` }
   })
+
+  if (!res.ok) throw new Error(`Media download failed: ${res.status} ${url}`)
+
   const buffer = await res.arrayBuffer()
   return Buffer.from(buffer).toString('base64')
 }
