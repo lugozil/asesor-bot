@@ -52,10 +52,15 @@ export async function POST(req: NextRequest) {
     if (msg.type === 'text') {
       userMessage = msg?.text?.body ?? ''
     }
-    // ── Nota de voz ───────────────────────────────────────────────────────────
-    else if (msg.type === 'audio' || msg.type === 'voice') {
-      const mediaUrl = msg?.audio?.link ?? msg?.voice?.link ?? msg?.audio?.url ?? msg?.voice?.url ?? ''
-      if (!mediaUrl) return NextResponse.json({ ok: true })
+    // ── Nota de voz (ptt = push-to-talk, audio, voice) ────────────────────────
+    else if (msg.type === 'audio' || msg.type === 'voice' || msg.type === 'ptt') {
+      const mediaObj = msg?.audio ?? msg?.voice ?? msg?.ptt ?? {}
+      const mediaUrl: string = mediaObj?.link ?? mediaObj?.url ?? mediaObj?.id ?? ''
+
+      if (!mediaUrl) {
+        await sendText(sender, `⚠️ _Debug: tipo="${msg.type}" sin URL. Payload: ${JSON.stringify(mediaObj)}_`)
+        return NextResponse.json({ ok: true })
+      }
 
       try {
         await sendText(sender, '🎙️ _Transcribiendo nota de voz..._')
@@ -68,6 +73,8 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ ok: true })
       }
     } else {
+      // Debug temporal: mostrar tipo desconocido
+      await sendText(sender, `_[debug] tipo de mensaje no soportado: "${msg.type}"_`)
       return NextResponse.json({ ok: true })
     }
 
