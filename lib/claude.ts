@@ -93,7 +93,7 @@ export interface ChatResult {
 
 export async function chat(userMessage: string): Promise<ChatResult> {
   const [history, knowledgeRows] = await Promise.all([
-    getRecentMessages(20),
+    getRecentMessages(10),
     getKnowledge()
   ])
 
@@ -110,9 +110,15 @@ export async function chat(userMessage: string): Promise<ChatResult> {
   ]
 
   const reply = await client.messages.create({
-    model:      'claude-sonnet-4-6',
-    max_tokens: 1024,
-    system:     buildSystemPrompt(knowledgeContext),
+    model:      'claude-haiku-4-5-20251001',
+    max_tokens: 600,
+    system: [
+      {
+        type:          'text',
+        text:          buildSystemPrompt(knowledgeContext),
+        cache_control: { type: 'ephemeral' }   // cachea el system prompt 5 min
+      }
+    ],
     messages
   })
 
