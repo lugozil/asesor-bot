@@ -4,6 +4,9 @@ import { sendText, sendImage, downloadMediaAsBase64 } from '@/lib/whapi'
 import { transcribeAudio } from '@/lib/groq'
 import { chat } from '@/lib/claude'
 
+// Extender timeout al máximo permitido en Vercel Hobby (60s)
+export const maxDuration = 60
+
 // Único número autorizado — 04249292269 Venezuela (+58)
 const ALLOWED = '584249292269'
 
@@ -51,13 +54,19 @@ export async function POST(req: NextRequest) {
     }
     // ── Nota de voz ───────────────────────────────────────────────────────────
     else if (msg.type === 'audio' || msg.type === 'voice') {
-      const mediaUrl = msg?.audio?.link ?? msg?.voice?.link ?? ''
+      const mediaUrl = msg?.audio?.link ?? msg?.voice?.link ?? msg?.audio?.url ?? msg?.voice?.url ?? ''
       if (!mediaUrl) return NextResponse.json({ ok: true })
 
-      await sendText(sender, '🎙️ _Transcribiendo nota de voz..._')
-      const base64   = await downloadMediaAsBase64(mediaUrl)
-      userMessage    = await transcribeAudio(base64)
-      await sendText(sender, `_🗒 Transcripción: "${userMessage}"_`)
+      try {
+        await sendText(sender, '🎙️ _Transcribiendo nota de voz..._')
+        const base64 = await downloadMediaAsBase64(mediaUrl)
+        userMessage  = await transcribeAudio(base64)
+        await sendText(sender, `_🗒 Transcripción: "${userMessage}"_`)
+      } catch (err) {
+        console.error('[voice]', err)
+        await sendText(sender, '⚠️ _No pude procesar la nota de voz. Intenta de nuevo o escribe el mensaje._')
+        return NextResponse.json({ ok: true })
+      }
     } else {
       return NextResponse.json({ ok: true })
     }
